@@ -31,6 +31,8 @@ __global__ void matrix_matrix_mult_kernel(float *matrixA, float *matrixB, float 
 
 int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
 {
+    cudaError_t cudaError;
+
     // Verificar se a matriz passada é válida
     if (matrix == NULL || matrix->rows == NULL)
     {
@@ -43,10 +45,22 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
 
     // Alocar memória na GPU para a matriz
     float *d_matrix_rows;
-    cudaMalloc(&d_matrix_rows, num_elements * sizeof(float));
+    cudaError = cudaMalloc(&d_matrix_rows, num_elements * sizeof(float));
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMalloc d_x returned error %s (code %d)\n",
+               cudaGetErrorString(cudaError), cudaError);
+        return 0;
+    }
 
     // Copiar os dados da matriz da CPU para a GPU
-    cudaMemcpy(d_matrix_rows, matrix->rows, num_elements * sizeof(float), cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpy(d_matrix_rows, matrix->rows, num_elements * sizeof(float), cudaMemcpyHostToDevice);
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMemcpy (h_x -> d_x) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError), cudaError,
+               __LINE__);
+        return 0;
+    }
 
     // Definir o número de threads por bloco e o número de blocos
     int threads_per_block = 256;
@@ -59,7 +73,14 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
     cudaDeviceSynchronize();
 
     // Copiar os resultados da GPU de volta para a CPU
-    cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+     if (cudaError != cudaSuccess)
+    {
+        printf("cudaMemcpy (d_x -> h_y) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError),
+               cudaError,
+               __LINE__);
+        return 0;
+    }
 
     // Liberar a memória na GPU
     cudaFree(d_matrix_rows);
