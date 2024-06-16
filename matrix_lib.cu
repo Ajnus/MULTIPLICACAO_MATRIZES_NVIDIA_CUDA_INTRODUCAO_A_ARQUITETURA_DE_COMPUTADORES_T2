@@ -1,11 +1,39 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <immintrin.h> // Biblioteca Intel Intrinsics
+#include <cuda_runtime.h>
 #include "matrix_lib.h"
 
-int scalar_matrix_mult(float scalar_value, struct matrix *matrix) {
+__global__ void scalar_matrix_mult_kernel(float scalar_value, float *matrix_rows, unsigned long int num_elements)
+{
+    unsigned long int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < num_elements)
+    {
+        matrix_rows[idx] *= scalar_value;
+    }
+}
+
+__global__ void matrix_matrix_mult_kernel(float *matrixA, float *matrixB, float *matrixC, unsigned long int heightA, unsigned long int widthA, unsigned long int widthB)
+{
+    unsigned long int row = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned long int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < heightA && col < widthB)
+    {
+        float value = 0;
+        for (unsigned long int k = 0; k < widthA; k++)
+        {
+            value += matrixA[row * widthA + k] * matrixB[k * widthB + col];
+        }
+        matrixC[row * widthB + col] = value;
+    }
+}
+
+int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
+{
     // Verificar se a matriz passada é válida
-    if (matrix == NULL || matrix->rows == NULL) {
+    if (matrix == NULL || matrix->rows == NULL)
+    {
         printf("Erro: Matriz inválida.\n");
         return 0;
     }
@@ -13,62 +41,74 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix) {
     // Determinar o número de elementos na matriz
     unsigned long int num_elements = matrix->height * matrix->width;
 
-    // Vetor com o valor escalar replicado para ser usado na operação vetorial
-    __m256 scalar = _mm256_set1_ps(scalar_value);
+    // Alocar memória na GPU para a matriz
+    float *d_matrix_rows;
+    cudaMalloc(&d_matrix_rows, num_elements * sizeof(float));
 
-    // Iterar sobre os elementos da matriz em blocos de 8 floats (tamanho de um registrador AVX)
-    for (unsigned long int i = 0; i < num_elements; i += 8) {
-        // Carregar 8 elementos da matriz em um registrador AVX
-        __m256 matrix_elements = _mm256_loadu_ps(&(matrix->rows[i]));
+    // Copiar os dados da matriz da CPU para a GPU
+    cudaMemcpy(d_matrix_rows, matrix->rows, num_elements * sizeof(float), cudaMemcpyHostToDevice);
 
-        // Multiplicar os elementos da matriz pelo valor escalar
-        __m256 result = _mm256_mul_ps(matrix_elements, scalar);
+    // Definir o número de threads por bloco e o número de blocos
+    int threads_per_block = 256;
+    int blocks_per_grid = (num_elements + threads_per_block - 1) / threads_per_block;
 
-        // Armazenar o resultado de volta na matriz
-        _mm256_storeu_ps(&(matrix->rows[i]), result);
-    }
+    // Lançar o kernel
+    scalar_matrix_mult_kernel<<<blocks_per_grid, threads_per_block>>>(scalar_value, d_matrix_rows, num_elements);
+
+    // Esperar a execução do kernel terminar
+    cudaDeviceSynchronize();
+
+    // Copiar os resultados da GPU de volta para a CPU
+    cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Liberar a memória na GPU
+    cudaFree(d_matrix_rows);
 
     // Retornar 1 indicando que a operação foi bem-sucedida
     return 1;
 }
 
-int matrix_matrix_mult(struct matrix *A, struct matrix *B, struct matrix *C) {
+int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct matrix *matrixC)
+{
     // Verificar se as dimensões são válidas para a multiplicação de matrizes
-    if (A->width != B->height) {
+    if (matrixA->width != matrixB->height)
+    {
         printf("Erro: As dimensões das matrizes não são compatíveis para multiplicação.\n");
         return 0;
     }
 
-    unsigned long int linhaC = A->height;    // Número de linhas da matriz resultante
-    unsigned long int colunaC = B->width;    // Número de colunas da matriz resultante
+    unsigned long int heightA = matrixA->height;
+    unsigned long int widthA = matrixA->width;
+    unsigned long int widthB = matrixB->width;
 
-    // Zera matriz C
-    for (unsigned long int i = 0; i < linhaC; i++) {
-        for (unsigned long int j = 0; j < colunaC; j++) {
-            C->rows[i * colunaC + j] = 0;
-        }
-    }
+    // Alocar memória na GPU para as matrizes
+    float *d_matrixA, *d_matrixB, *d_matrixC;
+    cudaMalloc(&d_matrixA, heightA * widthA * sizeof(float));
+    cudaMalloc(&d_matrixB, widthA * widthB * sizeof(float));
+    cudaMalloc(&d_matrixC, heightA * widthB * sizeof(float));
 
-    // Iterar cada elemento das linhas da matriz A com todas as linhas da matriz B
-    for (unsigned long int i = 0; i < A->height; i++) {
-        for (unsigned long int j = 0; j < A->width; j++) {
-            // Carregar o elemento de A em um registrador AVX e replicá-lo
-            __m256 a_element = _mm256_set1_ps(A->rows[i * A->width + j]);
+    // Copiar os dados das matrizes da CPU para a GPU
+    cudaMemcpy(d_matrixA, matrixA->rows, heightA * widthA * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_matrixB, matrixB->rows, widthA * widthB * sizeof(float), cudaMemcpyHostToDevice);
 
-            // Iterar sobre as colunas da matriz B em blocos de 8 floats (tamanho de um registrador AVX)
-            for (unsigned long int k = 0; k < B->width; k += 8) {
-                // Carregar 8 elementos de B em um registrador AVX
-                __m256 b_elements = _mm256_loadu_ps(&(B->rows[j * B->width + k]));
+    // Definir o número de threads por bloco e o número de blocos
+    dim3 threadsPerBlock(16, 16);
+    dim3 blocksPerGrid((widthB + threadsPerBlock.x - 1) / threadsPerBlock.x, (heightA + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
-                // Multiplicar os elementos de A pelo bloco de elementos de B
-                __m256 result = _mm256_mul_ps(a_element, b_elements);
+    // Lançar o kernel
+    matrix_matrix_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_matrixA, d_matrixB, d_matrixC, heightA, widthA, widthB);
 
-                // Somar o resultado ao bloco correspondente da matriz C
-                __m256 c_elements = _mm256_loadu_ps(&(C->rows[i * colunaC + k]));
-                c_elements = _mm256_add_ps(c_elements, result);
-                _mm256_storeu_ps(&(C->rows[i * colunaC + k]), c_elements);
-            }
-        }
-    }
+    // Esperar a execução do kernel terminar
+    cudaDeviceSynchronize();
+
+    // Copiar os resultados da GPU de volta para a CPU
+    cudaMemcpy(matrixC->rows, d_matrixC, heightA * widthB * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Liberar a memória na GPU
+    cudaFree(d_matrixA);
+    cudaFree(d_matrixB);
+    cudaFree(d_matrixC);
+
+    // Retornar 1 indicando que a operação foi bem-sucedida
     return 1;
 }
