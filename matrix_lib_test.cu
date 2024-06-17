@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
   overall_t1 = clock();
 
   // Check arguments
-  if (argc != 10)
+  if (argc != 12)
   {
     printf("Usage: %s <scalar_value> <DimA_M> <DimA_N> <DimB_M> <DimB_N> <matrixA_filename> <matrixB_filename> <result1_filename> <result2_filename> <threads por bloco> <número de blocos>\n", argv[0]);
     return 1;

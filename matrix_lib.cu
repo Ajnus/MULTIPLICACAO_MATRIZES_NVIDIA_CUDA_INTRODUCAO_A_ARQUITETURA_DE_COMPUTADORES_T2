@@ -71,6 +71,8 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
     // Esperar a execução do kernel terminar
     cudaDeviceSynchronize();
 
+    cudaGetLastError();
+
     // Copiar os resultados da GPU de volta para a CPU
     cudaError = cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaError != cudaSuccess)
@@ -155,6 +157,8 @@ int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct ma
 
     // Esperar a execução do kernel terminar
     cudaDeviceSynchronize();
+
+    cudaGetLastError();
 
     // Copiar os resultados da GPU de volta para a CPU
     cudaError = cudaMemcpy(matrixC->rows, d_matrixC, heightA * widthB * sizeof(float), cudaMemcpyDeviceToHost);
