@@ -3,6 +3,9 @@
 #include <cuda_runtime.h>
 #include "matrix_lib.h"
 
+extern int threadsPerBlock;
+extern int blocksPerGrid;
+
 __global__ void scalar_matrix_mult_kernel(float scalar_value, float *matrix_rows, unsigned long int num_elements)
 {
     unsigned long int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -62,18 +65,14 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
         return 0;
     }
 
-    // Definir o número de threads por bloco e o número de blocos
-    int threads_per_block = 256;
-    int blocks_per_grid = (num_elements + threads_per_block - 1) / threads_per_block;
-
     // Lançar o kernel
-    scalar_matrix_mult_kernel<<<blocks_per_grid, threads_per_block>>>(scalar_value, d_matrix_rows, num_elements);
+    scalar_matrix_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(scalar_value, d_matrix_rows, num_elements);
 
     // Esperar a execução do kernel terminar
     cudaDeviceSynchronize();
 
     // Copiar os resultados da GPU de volta para a CPU
-    cudaError cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError = cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
      if (cudaError != cudaSuccess)
     {
         printf("cudaMemcpy (d_x -> h_y) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError),
@@ -113,8 +112,8 @@ int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct ma
     cudaMemcpy(d_matrixB, matrixB->rows, widthA * widthB * sizeof(float), cudaMemcpyHostToDevice);
 
     // Definir o número de threads por bloco e o número de blocos
-    dim3 threadsPerBlock(16, 16);
-    dim3 blocksPerGrid((widthB + threadsPerBlock.x - 1) / threadsPerBlock.x, (heightA + threadsPerBlock.y - 1) / threadsPerBlock.y);
+    //dim3 threadsPerBlock(16, 16);
+    //dim3 blocksPerGrid((widthB + threadsPerBlock.x - 1) / threadsPerBlock.x, (heightA + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
     // Lançar o kernel
     matrix_matrix_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_matrixA, d_matrixB, d_matrixC, heightA, widthA, widthB);
