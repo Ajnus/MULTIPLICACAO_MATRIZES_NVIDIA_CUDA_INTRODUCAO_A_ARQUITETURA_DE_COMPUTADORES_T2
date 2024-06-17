@@ -73,7 +73,7 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
 
     // Copiar os resultados da GPU de volta para a CPU
     cudaError = cudaMemcpy(matrix->rows, d_matrix_rows, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
-     if (cudaError != cudaSuccess)
+    if (cudaError != cudaSuccess)
     {
         printf("cudaMemcpy (d_x -> h_y) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError),
                cudaError,
@@ -90,6 +90,8 @@ int scalar_matrix_mult(float scalar_value, struct matrix *matrix)
 
 int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct matrix *matrixC)
 {
+    cudaError_t cudaError;
+
     // Verificar se as dimensões são válidas para a multiplicação de matrizes
     if (matrixA->width != matrixB->height)
     {
@@ -103,17 +105,50 @@ int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct ma
 
     // Alocar memória na GPU para as matrizes
     float *d_matrixA, *d_matrixB, *d_matrixC;
-    cudaMalloc(&d_matrixA, heightA * widthA * sizeof(float));
-    cudaMalloc(&d_matrixB, widthA * widthB * sizeof(float));
-    cudaMalloc(&d_matrixC, heightA * widthB * sizeof(float));
+    cudaError = cudaMalloc(&d_matrixA, heightA * widthA * sizeof(float));
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMalloc d_x returned error %s (code %d)\n",
+               cudaGetErrorString(cudaError), cudaError);
+        return 0;
+    }
+
+    cudaError = cudaMalloc(&d_matrixB, widthA * widthB * sizeof(float));
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMalloc d_x returned error %s (code %d)\n",
+               cudaGetErrorString(cudaError), cudaError);
+        return 0;
+    }
+
+    cudaError = cudaMalloc(&d_matrixC, heightA * widthB * sizeof(float));
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMalloc d_x returned error %s (code %d)\n",
+               cudaGetErrorString(cudaError), cudaError);
+        return 0;
+    }
 
     // Copiar os dados das matrizes da CPU para a GPU
-    cudaMemcpy(d_matrixA, matrixA->rows, heightA * widthA * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_matrixB, matrixB->rows, widthA * widthB * sizeof(float), cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpy(d_matrixA, matrixA->rows, heightA * widthA * sizeof(float), cudaMemcpyHostToDevice);
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMemcpy (h_x -> d_x) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError), cudaError,
+               __LINE__);
+        return 0;
+    }
+
+    cudaError = cudaMemcpy(d_matrixB, matrixB->rows, widthA * widthB * sizeof(float), cudaMemcpyHostToDevice);
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMemcpy (h_x -> d_x) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError), cudaError,
+               __LINE__);
+        return 0;
+    }
 
     // Definir o número de threads por bloco e o número de blocos
-    //dim3 threadsPerBlock(16, 16);
-    //dim3 blocksPerGrid((widthB + threadsPerBlock.x - 1) / threadsPerBlock.x, (heightA + threadsPerBlock.y - 1) / threadsPerBlock.y);
+    // dim3 threadsPerBlock(16, 16);
+    // dim3 blocksPerGrid((widthB + threadsPerBlock.x - 1) / threadsPerBlock.x, (heightA + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
     // Lançar o kernel
     matrix_matrix_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_matrixA, d_matrixB, d_matrixC, heightA, widthA, widthB);
@@ -122,13 +157,18 @@ int matrix_matrix_mult(struct matrix *matrixA, struct matrix *matrixB, struct ma
     cudaDeviceSynchronize();
 
     // Copiar os resultados da GPU de volta para a CPU
-    cudaMemcpy(matrixC->rows, d_matrixC, heightA * widthB * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError = cudaMemcpy(matrixC->rows, d_matrixC, heightA * widthB * sizeof(float), cudaMemcpyDeviceToHost);
+    if (cudaError != cudaSuccess)
+    {
+        printf("cudaMemcpy (h_x -> d_x) returned error %s (code %d), line(% d)\n ", cudaGetErrorString(cudaError), cudaError,
+               __LINE__);
+        return 0;
+    }
 
     // Liberar a memória na GPU
     cudaFree(d_matrixA);
     cudaFree(d_matrixB);
     cudaFree(d_matrixC);
 
-    // Retornar 1 indicando que a operação foi bem-sucedida
     return 1;
 }
